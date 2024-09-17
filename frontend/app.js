@@ -2,6 +2,9 @@ const chat = document.getElementById('chat');
 const messageInput = document.getElementById('messageInput');
 const sendButton = document.getElementById('sendButton');
 
+// Generate a unique client ID
+const clientId = generateUniqueId();
+
 // Establishing a WebSocket connection
 const socket = new WebSocket('ws://localhost:8080/ws');
 
@@ -9,32 +12,138 @@ const socket = new WebSocket('ws://localhost:8080/ws');
 const encryptionKey = '12345678901234567890123456789012';
 
 socket.addEventListener('open', function (event) {
-    console.log('Połączono z serwerem WebSocket');
+    console.log('Connected to WebSocket server');
 });
 
+// Intersection Observer to detect when a message becomes visible
+const observer = new IntersectionObserver((entries) => {
+    entries.forEach(async (entry) => {
+        if (entry.isIntersecting) {
+            const messageElement = entry.target;
+            const messageId = messageElement.dataset.messageId;
+
+            // Send an ACK for this message, if it has not already been sent
+            if (!messageElement.dataset.ackSent) {
+                const ackContent = {
+                    type: 'ACK',
+                    id: messageId,
+                    senderId: clientId
+                };
+                const ackMessage = await encrypt(JSON.stringify(ackContent));
+                socket.send(ackMessage);
+                messageElement.dataset.ackSent = 'true';
+                console.log(`Sent ACK for message ${messageId}`);
+            }
+
+            // Stop observing the element
+            observer.unobserve(messageElement);
+        }
+    });
+}, {
+    threshold: 0.5 // A message is considered visible when 50% of its height is in the view area
+});
+
+// Handle incoming messages
 socket.addEventListener('message', async function (event) {
     const encryptedMessage = event.data;
     try {
         const decryptedMessage = await decrypt(encryptedMessage);
-        const messageElement = document.createElement('div');
-        messageElement.textContent = `Inny użytkownik: ${decryptedMessage}`;
-        chat.appendChild(messageElement);
+        const messageContent = JSON.parse(decryptedMessage);
+
+        // Ignore messages sent by ourselves
+        if (messageContent.senderId === clientId) {
+            return;
+        }
+
+        if (messageContent.type === 'ACK') {
+            // Received ACK for our message
+            console.log(`Received ACK for message ${messageContent.id}`);
+
+            // Find the message element and schedule deletion
+            const messageElement = document.querySelector(`[data-message-id='${messageContent.id}']`);
+            if (messageElement) {
+                setTimeout(() => {
+                    if (chat.contains(messageElement)) {
+                        chat.removeChild(messageElement);
+                    }
+                }, 10000);
+            }
+        } else if (messageContent.type === 'MESSAGE') {
+            // Received a new message
+            const messageElement = document.createElement('div');
+            messageElement.textContent = `Other user: ${messageContent.text}`;
+            messageElement.dataset.messageId = messageContent.id;
+            chat.appendChild(messageElement);
+
+            // Observe visibility of the message
+            observer.observe(messageElement);
+
+            // Remove the message after 10 seconds
+            setTimeout(() => {
+                if (chat.contains(messageElement)) {
+                    chat.removeChild(messageElement);
+                }
+            }, 10000);
+        }
     } catch (e) {
         console.error('Decryption error:', e);
     }
 });
 
+// Send a message
 sendButton.addEventListener('click', async function () {
     const message = messageInput.value;
     if (message !== '') {
-        const encryptedMessage = await encrypt(message);
+        // Generate a unique message ID
+        const messageId = generateUniqueId();
+        const messageContent = {
+            id: messageId,
+            senderId: clientId,
+            type: 'MESSAGE',
+            text: message
+        };
+        const encryptedMessage = await encrypt(JSON.stringify(messageContent));
         socket.send(encryptedMessage);
+
         const messageElement = document.createElement('div');
-        messageElement.textContent = `Ty: ${message}`;
+        messageElement.textContent = `You: ${message}`;
+        messageElement.dataset.messageId = messageId;
         chat.appendChild(messageElement);
         messageInput.value = '';
+
+        // Listen for ACKs for this message
+        const ackListener = async function (event) {
+            const encryptedAck = event.data;
+            try {
+                const decryptedAck = await decrypt(encryptedAck);
+                const ackContent = JSON.parse(decryptedAck);
+
+                // Ignore ACKs sent by ourselves
+                if (ackContent.senderId === clientId) {
+                    return;
+                }
+
+                if (ackContent.type === 'ACK' && ackContent.id === messageId) {
+                    // Receiver has read the message
+                    console.log(`Confirmation of reading received for message ${messageId}`);
+                    setTimeout(() => {
+                        if (chat.contains(messageElement)) {
+                            chat.removeChild(messageElement);
+                        }
+                    }, 10000);
+                    socket.removeEventListener('message', ackListener);
+                }
+            } catch (e) {
+                // Ignore decryption errors
+            }
+        };
+        socket.addEventListener('message', ackListener);
     }
 });
+
+function generateUniqueId() {
+    return '_' + Math.random().toString(36).substr(2, 9);
+}
 
 // Handle the Enter key
 messageInput.addEventListener('keypress', function (e) {
@@ -42,7 +151,6 @@ messageInput.addEventListener('keypress', function (e) {
         sendButton.click();
     }
 });
-
 
 // Function to generate CryptoKey from text key
 async function getKey() {
@@ -53,12 +161,12 @@ async function getKey() {
         false,
         ["encrypt", "decrypt"]
     );
-    return key;    
+    return key;
 }
 
 async function encrypt(text) {
     const key = await getKey();
-    const iv = window.crypto.getRandomValues(new Uint8Array(12)); // 12 bajtów dla AES-GCM
+    const iv = window.crypto.getRandomValues(new Uint8Array(12)); // 12 bytes for AES-GCM
     const encodedText = new TextEncoder().encode(text);
     const encrypted = await window.crypto.subtle.encrypt(
         {
