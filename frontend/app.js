@@ -21,9 +21,6 @@ const clientId = generateUniqueId();
 // Establishing a WebSocket connection
 const socket = new WebSocket(`ws://localhost:8080/ws?chatId=${encodeURIComponent(chatId)}&password=${encodeURIComponent(password)}`);
 
-// Fixed encryption key (for testing purposes)
-const encryptionKey = '12345678901234567890123456789012';
-
 socket.addEventListener('open', function (event) {
     console.log('Connected to WebSocket server');
 });
@@ -170,7 +167,7 @@ messageInput.addEventListener('keypress', function (e) {
     }
 });
 
-// Function to generate CryptoKey from text key
+// Function to generate CryptoKey from password
 async function getKey() {
     if (!password) {
         throw new Error('Password is missing');
@@ -179,7 +176,7 @@ async function getKey() {
     const paddedPassword = password.padEnd(32, ' ');
     const key = await window.crypto.subtle.importKey(
         "raw",
-        new TextEncoder().encode(encryptionKey),
+        new TextEncoder().encode(paddedPassword),
         "AES-GCM",
         false,
         ["encrypt", "decrypt"]
