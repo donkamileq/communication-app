@@ -2,17 +2,35 @@ const chat = document.getElementById('chat');
 const messageInput = document.getElementById('messageInput');
 const sendButton = document.getElementById('sendButton');
 
+// Function to get query parameters from URL
+function getQueryParam(param) {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get(param);
+}
+
+const chatId = getQueryParam('chatId');
+const password = getQueryParam('password');
+
+if (!chatId || !password) {
+    alert('Missing chatId or password in the URL.');
+}
+
 // Generate a unique client ID
 const clientId = generateUniqueId();
 
 // Establishing a WebSocket connection
-const socket = new WebSocket('ws://localhost:8080/ws');
+const socket = new WebSocket(`ws://localhost:8080/ws?chatId=${encodeURIComponent(chatId)}&password=${encodeURIComponent(password)}`);
 
 // Fixed encryption key (for testing purposes)
 const encryptionKey = '12345678901234567890123456789012';
 
 socket.addEventListener('open', function (event) {
     console.log('Connected to WebSocket server');
+});
+
+socket.addEventListener('error', function (event) {
+    console.error('WebSocket error:', event);
+    alert('Unable to connect to the chat. Please check your chat ID and password.');
 });
 
 // Intersection Observer to detect when a message becomes visible
@@ -154,6 +172,11 @@ messageInput.addEventListener('keypress', function (e) {
 
 // Function to generate CryptoKey from text key
 async function getKey() {
+    if (!password) {
+        throw new Error('Password is missing');
+    }
+    // Ensure the key is 32 bytes for AES-256
+    const paddedPassword = password.padEnd(32, ' ');
     const key = await window.crypto.subtle.importKey(
         "raw",
         new TextEncoder().encode(encryptionKey),
