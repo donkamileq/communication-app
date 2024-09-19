@@ -1,17 +1,21 @@
 services:
   backend:
     build: ./backend
-    ports:
-      - "8080:8080"
     networks:
       - chatnet
 
   frontend:
     build: ./frontend
+    networks:
+      - chatnet
+
+  nginx:
+    build: ./nginx
     ports:
-      - "8081:8081"
+      - "443:443"
     depends_on:
       - backend
+      - frontend
     networks:
       - chatnet
 

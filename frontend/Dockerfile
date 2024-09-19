@@ -1,15 +1,14 @@
 FROM node:20-alpine
 
-RUN npm install -g http-server
-
 WORKDIR /app
 
 COPY package*.json ./
-
 RUN npm install
 
 COPY . .
 
-EXPOSE 8081
+RUN npm install http-server -g
 
-CMD ["http-server", "-p", "8081", "-c-1"]
+EXPOSE 80
+
+CMD ["http-server", "-p", "80", "-c-1"]

@@ -27,3 +27,5 @@ go.work.sum
 
 frontend/node_modules
 frontend/npm-debug.log
+
+nginx/certs/
